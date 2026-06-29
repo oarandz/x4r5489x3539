@@ -81,6 +81,12 @@
   .tile.errored .overlay-msg{display:flex}
   .tile.errored .screen iframe{display:none}
 
+  /* live chart tiles */
+  .tile.chart .screen{background:#0d0f11}
+  .tile.chart .tradingview-widget-container,.tile.chart .tradingview-widget-container__widget{height:100%;width:100%}
+  .tile.chart .tbar .ch::before{content:"\1F4C8  ";opacity:.85}
+  .desk-btn.on{background:var(--tally);border-color:var(--tally);color:#fff}
+
   /* splitters */
   .split{position:absolute;z-index:50;background:transparent;display:flex;align-items:center;justify-content:center}
   .split::before{content:"";background:var(--line);border-radius:3px;transition:background .12s}
@@ -209,6 +215,7 @@
       </div>
       <button class="desk-btn" id="recBtn">&#9679; Rec</button>
       <button class="desk-btn" id="qualityBtn">MAIN &le;720p</button>
+      <button class="desk-btn" id="fxBtn">&#163;/$ chart</button>
       <button class="desk-btn" id="addFeed">+ Add feed</button>
       <button class="desk-btn" id="resetLayout">Reset layout</button>
       <button class="desk-btn" id="edit">Edit sources</button>
@@ -290,6 +297,7 @@
   $('edit').addEventListener('click', function(){ stage.style.display='none'; setup.style.display='flex'; });
   $('resetLayout').addEventListener('click', function(){ thumbFrac=0.26; wireFrac=0.20; var v=videoIndices(); if(v.length) setMain(v[0]); else computeLayout(); });
   $('addFeed').addEventListener('click', addFeedPrompt);
+  $('fxBtn').addEventListener('click', toggleFx);
   function addFeedPrompt(){
     var raw=prompt('Add a feed — paste a YouTube link.\nOptional label, e.g.  BBC News | https://www.youtube.com/watch?v=…');
     if(raw==null) return; raw=raw.trim(); if(!raw) return;
@@ -368,6 +376,39 @@
     el.addEventListener('click', function(){ setMain(el.__idx); });
     wall.appendChild(el);
     tiles.push({kind:'youtube', videoId:id, channelId:channelId, handleUrl:handleUrl, player:null, ready:false, errored:false, title:'', label:label, el:el, __n:n});
+  }
+
+  /* ---------- live FX chart tile (TradingView) ---------- */
+  function reindexTiles(){ tiles.forEach(function(t,i){ if(t.el) t.el.__idx=i; }); }
+  function addChartTile(n){
+    var el=document.createElement('div'); el.className='tile chart'; el.__idx=tiles.length; el.__n=n;
+    el.innerHTML='<div class="tbar"><span class="ch">CH '+(n+1)+' \u00b7 GBP/USD</span>'+
+      '<span class="tbar-right"><span class="promote">tap = main</span></span></div>'+
+      '<div class="screen"></div>';
+    el.addEventListener('click', function(){ setMain(el.__idx); });
+    wall.appendChild(el);
+    tiles.push({kind:'chart', el:el, __n:n});
+    var box=document.createElement('div'); box.className='tradingview-widget-container';
+    var inner=document.createElement('div'); inner.className='tradingview-widget-container__widget'; box.appendChild(inner);
+    var s=document.createElement('script'); s.type='text/javascript'; s.async=true;
+    s.src='https://s3.tradingview.com/external-embedding/embed-widget-advanced-chart.js';
+    s.text=JSON.stringify({autosize:true,symbol:'FX:GBPUSD',interval:'1',timezone:'Europe/London',theme:'dark',
+      style:'1',locale:'en',hide_side_toolbar:true,allow_symbol_change:false,save_image:false,calendar:false,
+      backgroundColor:'rgba(13,15,17,1)',support_host:'https://www.tradingview.com'});
+    box.appendChild(s);
+    el.querySelector('.screen').appendChild(box);
+  }
+  function toggleFx(){
+    var idx=-1; tiles.forEach(function(t,i){ if(t.kind==='chart') idx=i; });
+    if(idx>=0){
+      try{ tiles[idx].el.remove(); }catch(e){} tiles.splice(idx,1); reindexTiles();
+      if(mainIdx===idx) mainIdx=-1; else if(mainIdx>idx) mainIdx--;
+      computeLayout(); renderDesk(); $('fxBtn').classList.remove('on'); showToast('<div class="big">CHART CLOSED</div>');
+    } else {
+      var n=0; tiles.forEach(function(t){ if((t.kind==='youtube'||t.kind==='chart')&&t.__n>=n) n=t.__n+1; });
+      addChartTile(n); reindexTiles(); computeLayout(); renderDesk();
+      $('fxBtn').classList.add('on'); showToast('<div class="big">\u00A3/$ LIVE CHART</div>');
+    }
   }
 
   function addWireTile(urls){
@@ -453,7 +494,7 @@
 
   /* ---------- layout: main + thumbnails + wire ---------- */
   function setGeom(el,l,t,w,h){ el.style.left=Math.round(l)+'px'; el.style.top=Math.round(t)+'px'; el.style.width=Math.round(w)+'px'; el.style.height=Math.round(h)+'px'; }
-  function videoIndices(){ var v=[]; tiles.forEach(function(t,i){ if(t.kind==='youtube') v.push(i); }); return v; }
+  function videoIndices(){ var v=[]; tiles.forEach(function(t,i){ if(t.kind==='youtube'||t.kind==='chart') v.push(i); }); return v; }
   function computeLayout(){
     var pr=wall.getBoundingClientRect(), W=pr.width, H=pr.height;
     var vids=videoIndices(), wire=null; tiles.forEach(function(t){ if(t.kind==='rss') wire=t; });
@@ -467,7 +508,7 @@
     var thumbW = hasThumbs ? clamp(Math.round(W*thumbFrac), Math.round(W*0.12), Math.round(W*0.55)) : 0;
     var mainW = W - (hasThumbs ? thumbW+SP : 0);
 
-    if(mainIdx<0 || tiles[mainIdx].kind!=='youtube') mainIdx=vids[0];
+    if(mainIdx<0 || !tiles[mainIdx] || (tiles[mainIdx].kind!=='youtube'&&tiles[mainIdx].kind!=='chart')) mainIdx=vids[0];
     setGeom(tiles[mainIdx].el, 0, 0, mainW, vidH);
     var tp=$('transport'); if(tp){ var bh=34; tp.style.display='flex'; tp.style.left='0px'; tp.style.width=mainW+'px'; tp.style.height=bh+'px'; tp.style.top=(vidH-bh)+'px'; }
 
@@ -578,8 +619,8 @@
       if(t.player&&t.ready){ try{ if(on&&!muted){ t.player.unMute(); t.player.setVolume(volume); } else { t.player.mute(); } }catch(e){} }
     });
   }
-  function setMain(i){ if(i<0||i>=tiles.length||tiles[i].kind!=='youtube') return;
-    mainIdx=i; audioIdx=i; computeLayout(); applyAudioAndAir(); renderDesk(); }
+  function setMain(i){ var k=tiles[i]&&tiles[i].kind; if(i<0||i>=tiles.length||(k!=='youtube'&&k!=='chart')) return;
+    mainIdx=i; if(k==='youtube') audioIdx=i; computeLayout(); applyAudioAndAir(); renderDesk(); }
   function cycle(dir){ var v=videoIndices(); if(!v.length) return; var p=v.indexOf(mainIdx); if(p<0)p=0; setMain(v[(p+dir+v.length)%v.length]); }
   function changeVolume(d){ if(audioIdx<0){ showToast('<div class="big">NO AUDIO</div>'); return; }
     volume=clamp(volume+d,0,100); if(muted&&volume>0) muted=false; applyAudioAndAir(); renderDesk();
