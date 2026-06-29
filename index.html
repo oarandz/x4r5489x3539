@@ -81,19 +81,6 @@
   .tile.errored .overlay-msg{display:flex}
   .tile.errored .screen iframe{display:none}
 
-  /* radio audio tiles */
-  .tile.radio{cursor:pointer}
-  .tile.radio .screen{display:flex;align-items:center;justify-content:center;background:radial-gradient(circle at 50% 40%, #1b1f25, #08090b)}
-  .radio-logo{max-width:64%;max-height:48%;object-fit:contain;filter:drop-shadow(0 6px 18px rgba(0,0,0,.55))}
-  .radio-ctl{position:absolute;left:0;right:0;bottom:0;display:flex;align-items:center;gap:10px;padding:9px 12px;
-    background:linear-gradient(to top, rgba(0,0,0,.82), rgba(0,0,0,0))}
-  .radio-ctl button{background:var(--panel-2);border:1px solid var(--line-bright);color:var(--text);border-radius:6px;
-    padding:5px 12px;font:inherit;font-size:12px;letter-spacing:.08em;cursor:pointer;white-space:nowrap}
-  .radio-ctl button.live{background:var(--tally);border-color:var(--tally);color:#fff;font-weight:700}
-  .radio-ctl input[type=range]{flex:1;min-width:40px;accent-color:var(--tally);cursor:pointer}
-  .radio-dot{width:9px;height:9px;border-radius:50%;background:#5a616b;flex:0 0 auto}
-  .tile.radio.playing .radio-dot{background:var(--tally);animation:pulse 1.4s infinite}
-
   /* splitters */
   .split{position:absolute;z-index:50;background:transparent;display:flex;align-items:center;justify-content:center}
   .split::before{content:"";background:var(--line);border-radius:3px;transition:background .12s}
@@ -190,7 +177,7 @@
         <label class="fld field-gap" for="feeds">News feeds — RSS URL per line</label>
         <textarea id="feeds" spellcheck="false"></textarea>
         <div class="hint">
-          Click any channel (or press its number / the arrow keys) to make it the big main window — the rest tile as thumbnails. Give each line a direct live link for instant, reliable playback, e.g. <code>Sky News | https://youtube.com/watch?v=…</code>. To <b>auto-follow</b> a channel's current live stream (so it picks up the next show when they restart, and catches a channel like Number 10 the moment it goes live), use <code>Name | channel:UCxxxx</code> — but this needs a free YouTube Data API key pasted into <code>YT_API_KEY</code> at the top of the file, because YouTube no longer lets a browser find the live video without one. No key = use direct links. You can also add a <b>radio</b> tile with a line like <code>radio: Hits Radio Manchester | rayo:354 | logo-url</code> (or paste a direct stream URL in place of <code>rayo:354</code>) — it plays as audio with its own LISTEN button and volume, independent of the video tiles. Drag the dividers between windows to resize them. The wires bar merges all feeds, tagged by source, newest first, refreshing every 30 seconds: new headlines flash orange for 30s, anything timestamped within 5 minutes flashes red. Feeds use public CORS proxies (one per feed).
+          Click any channel (or press its number / the arrow keys) to make it the big main window — the rest tile as thumbnails. Give each line a direct live link for instant, reliable playback, e.g. <code>Sky News | https://youtube.com/watch?v=…</code>. To <b>auto-follow</b> a channel's current live stream (so it picks up the next show when they restart, and catches a channel like Number 10 the moment it goes live), use <code>Name | channel:UCxxxx</code> — but this needs a free YouTube Data API key pasted into <code>YT_API_KEY</code> at the top of the file, because YouTube no longer lets a browser find the live video without one. No key = use direct links. Drag the dividers between windows to resize them. The wires bar merges all feeds, tagged by source, newest first, refreshing every 30 seconds: new headlines flash orange for 30s, anything timestamped within 5 minutes flashes red. Feeds use public CORS proxies (one per feed).
         </div>
         <div class="row">
           <button id="load" class="primary">Build the wall</button>
@@ -251,9 +238,7 @@
   var DEFAULT_VIDEOS=
     "Sky News | channel:UCoMdktPbSTixAyNGwb-UYkQ\n"+
     "GB News | channel:UC0vn8ISa4LKMunLbzaXLnOQ\n"+
-    "Times Radio | channel:UCF-VP3b3oH0XASqsLI5rnLw\n"+
-    "radio: Hits Radio Manchester | https://stream-al.hellorayo.co.uk/key.aac | https://media.bauerradio.com/image/upload/c_crop,g_custom/v1713435381/brand_manager/stations/qrqmvak19yhhehmdngzf.png\n"+
-    "radio: Hits Radio Liverpool | https://stream-al.hellorayo.co.uk/city.aac | https://media.bauerradio.com/image/upload/c_crop,g_custom/v1713273918/brand_manager/stations/i0ckzbuuwsjdmrs4dz8t.png";
+    "Times Radio | channel:UCF-VP3b3oH0XASqsLI5rnLw";
   var DEFAULT_FEEDS=
     "https://feeds.bbci.co.uk/news/uk/rss.xml\n"+
     "https://www.manchestereveningnews.co.uk/news/?service=rss\n"+
@@ -308,9 +293,6 @@
   function addFeedPrompt(){
     var raw=prompt('Add a feed — paste a YouTube link.\nOptional label, e.g.  BBC News | https://www.youtube.com/watch?v=…');
     if(raw==null) return; raw=raw.trim(); if(!raw) return;
-    if(/^radio:/i.test(raw)){ var rs=parseRadioSpec(raw); if(!rs){ showToast('<div class="big">BAD RADIO LINE</div>'); return; }
-      var rn=0; tiles.forEach(function(t){ if((t.kind==='youtube'||t.kind==='radio') && t.__n>=rn) rn=t.__n+1; });
-      addRadioTile(rs, rn); computeLayout(); renderDesk(); showToast('<div class="big">RADIO ADDED</div>'); return; }
     var label='', src=raw, bar=raw.indexOf('|');
     if(bar>=0){ var a=raw.slice(0,bar).trim(), b=raw.slice(bar+1).trim();
       if(extractChannel(b)||extractHandle(b)||extractId(b)){ label=a; src=b; }
@@ -318,7 +300,7 @@
     var ch=extractChannel(src), hd=ch?null:extractHandle(src), id=(ch||hd)?null:extractId(src), spec=null;
     if(ch) spec={channelId:ch,label:label}; else if(hd) spec={handleUrl:hd,label:label}; else if(id) spec={id:id,label:label};
     if(!spec){ showToast('<div class="big">NOT A YOUTUBE LINK</div>'); return; }
-    var nextN=0; tiles.forEach(function(t){ if((t.kind==='youtube'||t.kind==='radio') && t.__n>=nextN) nextN=t.__n+1; });
+    var nextN=0; tiles.forEach(function(t){ if(t.kind==='youtube' && t.__n>=nextN) nextN=t.__n+1; });
     addVideoTile(spec, nextN);
     var t=tiles[tiles.length-1];
     computeLayout(); renderDesk();
@@ -335,7 +317,6 @@
     setErr("");
     var vids=[], seen={};
     $('sources').value.split(/\n+/).forEach(function(raw){ raw=raw.trim(); if(!raw) return;
-      if(/^radio:/i.test(raw)){ var rs=parseRadioSpec(raw); if(rs){ var rk='r:'+(rs.streamUrl||rs.stationId||rs.label); if(!seen[rk]){ seen[rk]=1; vids.push(rs); } } return; }
       var label='', src=raw, bar=raw.indexOf('|');
       if(bar>=0){ var a=raw.slice(0,bar).trim(), b=raw.slice(bar+1).trim();
         if(extractChannel(b)||extractHandle(b)||extractId(b)){ label=a; src=b; }
@@ -349,11 +330,11 @@
     $('feeds').value.split(/\n+/).forEach(function(l){ l=l.trim(); if(/^https?:\/\//i.test(l)&&!rseen[l]){rseen[l]=1;rssUrls.push(l);} });
     if(vids.length===0 && rssUrls.length===0){ setErr("Add at least one video source or RSS feed."); return; }
 
-    tiles.forEach(function(t){ try{ t.player&&t.player.destroy(); }catch(e){} try{ if(t.audio){ t.audio.pause(); t.audio.src=''; } }catch(e){} });
+    tiles.forEach(function(t){ try{ t.player&&t.player.destroy(); }catch(e){} });
     tiles=[]; wall.innerHTML=""; mainIdx=-1; audioIdx=-1;
 
     var n=0;
-    vids.forEach(function(v){ if(v.kind==='radio') addRadioTile(v, n++); else addVideoTile(v, n++); });
+    vids.forEach(function(v){ addVideoTile(v, n++); });
     if(rssUrls.length) addWireTile(rssUrls);
     buildSplitters(); buildTransport();
 
@@ -387,85 +368,6 @@
     el.addEventListener('click', function(){ setMain(el.__idx); });
     wall.appendChild(el);
     tiles.push({kind:'youtube', videoId:id, channelId:channelId, handleUrl:handleUrl, player:null, ready:false, errored:false, title:'', label:label, el:el, __n:n});
-  }
-
-  /* ---------- radio (audio) tiles ---------- */
-  function parseRadioSpec(raw){
-    var body=raw.replace(/^radio:/i,'').trim();
-    var parts=body.split('|').map(function(s){ return s.trim(); });
-    var label=parts[0]||'Radio', src=parts[1]||'', logo=parts[2]||'';
-    var spec={kind:'radio', label:label, logoUrl:logo||null, stationId:null, streamUrl:null};
-    var m=src.match(/^rayo:(\d+)$/i);
-    if(m) spec.stationId=m[1];
-    else if(/^https?:\/\//i.test(src)) spec.streamUrl=src;
-    else return null;
-    return spec;
-  }
-  function addRadioTile(spec, n){
-    var label=spec.label||'Radio';
-    var el=document.createElement('div'); el.className='tile radio'; el.__idx=tiles.length; el.__n=n;
-    el.innerHTML=
-      '<div class="tbar"><span class="ch">CH '+(n+1)+' \u00b7 '+escapeHtml(label)+'</span>'+
-        '<span class="tbar-right"><span class="promote">tap = main</span></span></div>'+
-      '<div class="screen">'+
-        (spec.logoUrl?'<img class="radio-logo" src="'+spec.logoUrl+'" alt="'+escapeHtml(label)+'">':'<div class="radio-logo" style="color:var(--muted);font-size:16px;letter-spacing:.1em">'+escapeHtml(label)+'</div>')+
-        '<div class="overlay-msg">'+escapeHtml(label)+'<br><span style="opacity:.8">connecting\u2026</span></div>'+
-        '<div class="radio-ctl"><span class="radio-dot"></span>'+
-          '<button class="rd-toggle live">\u25B6 LISTEN</button>'+
-          '<input type="range" min="0" max="100" value="100" title="Volume">'+
-        '</div></div>';
-    var audio=new Audio(); audio.preload='none';
-    var t={kind:'radio', label:label, stationId:spec.stationId||null, streamUrl:spec.streamUrl||null, logoUrl:spec.logoUrl||null,
-           audio:audio, el:el, __n:n, playing:false};
-    var toggle=el.querySelector('.rd-toggle'), slider=el.querySelector('input[type=range]');
-    toggle.addEventListener('click', function(e){ e.stopPropagation();
-      if(t.playing){ try{ audio.pause(); }catch(_){} }
-      else { if(!audio.src){ showToast('<div class="big">NO STREAM YET</div>'); return; } audio.volume=slider.value/100; try{ audio.play(); }catch(_){} } });
-    slider.addEventListener('click', function(e){ e.stopPropagation(); });
-    slider.addEventListener('input', function(e){ e.stopPropagation(); audio.volume=slider.value/100; });
-    audio.addEventListener('playing', function(){ t.playing=true; el.classList.add('playing'); el.classList.remove('errored'); toggle.textContent='\u275A\u275A MUTE'; toggle.classList.remove('live'); });
-    audio.addEventListener('pause', function(){ t.playing=false; el.classList.remove('playing'); toggle.innerHTML='\u25B6 LISTEN'; toggle.classList.add('live'); });
-    audio.addEventListener('error', function(){ el.classList.remove('playing');
-      if(!t.streamUrl && !t.stationId) return;
-      el.classList.add('errored'); var ov=el.querySelector('.overlay-msg');
-      if(ov) ov.innerHTML=escapeHtml(label)+'<br><span style="opacity:.8">stream unavailable \u2014 put the direct stream URL on this line</span>'; });
-    el.addEventListener('click', function(){ setMain(el.__idx); });
-    wall.appendChild(el);
-    tiles.push(t);
-    startRadio(t);
-  }
-  async function startRadio(t){
-    var url=t.streamUrl;
-    if(!url && t.stationId){ t.el.classList.add('errored'); url=await resolveRadioStream(t.stationId); }
-    if(!url){ t.el.classList.add('errored'); var o=t.el.querySelector('.overlay-msg');
-      if(o) o.innerHTML=escapeHtml(t.label)+'<br><span style="opacity:.8">couldn\u2019t auto-find the stream \u2014 replace <b>rayo:'+(t.stationId||'')+'</b> with the direct stream URL</span>'; return; }
-    t.streamUrl=url; t.el.classList.remove('errored');
-    try{ t.audio.src=url; t.audio.load(); }catch(_){}
-  }
-  // Resolve a Bauer/Rayo station's live stream URL from its numeric station ID (best-effort; endpoint isn't officially documented).
-  async function resolveRadioStream(stationId){
-    var eps=['https://listenapi.planetradio.co.uk/api9.2/initweb/'+stationId,
-             'https://listenapi.planetradio.co.uk/api9/initweb/'+stationId];
-    for(var i=0;i<eps.length;i++){
-      var e=encodeURIComponent(eps[i]);
-      var tries=[eps[i],'https://api.allorigins.win/raw?url='+e,'https://corsproxy.io/?url='+e];
-      for(var j=0;j<tries.length;j++){ try{
-        var r=await fetch(tries[j],{cache:'no-store'}); if(!r.ok) throw 0;
-        var u=pickStreamUrl(await r.json()); if(u) return u;
-      }catch(err){} }
-    }
-    return null;
-  }
-  // Walk an arbitrary JSON object and return the first plausible audio stream URL.
-  function pickStreamUrl(o){
-    var found=null;
-    (function walk(v){ if(found||v==null) return;
-      if(typeof v==='string'){ if(/^https?:\/\/\S+\.(mp3|aac)(\?|$)/i.test(v) || (/^https?:\/\//.test(v)&&/sharp-stream|stream/i.test(v)&&/\.(mp3|aac)/i.test(v))) found=v; return; }
-      if(Array.isArray(v)){ for(var i=0;i<v.length;i++) walk(v[i]); return; }
-      if(typeof v==='object'){ if(typeof v.streamUrl==='string'&&/^https?:/.test(v.streamUrl)){ found=v.streamUrl; return; }
-        for(var k in v){ if(Object.prototype.hasOwnProperty.call(v,k)) walk(v[k]); } }
-    })(o);
-    return found;
   }
 
   function addWireTile(urls){
@@ -551,7 +453,7 @@
 
   /* ---------- layout: main + thumbnails + wire ---------- */
   function setGeom(el,l,t,w,h){ el.style.left=Math.round(l)+'px'; el.style.top=Math.round(t)+'px'; el.style.width=Math.round(w)+'px'; el.style.height=Math.round(h)+'px'; }
-  function videoIndices(){ var v=[]; tiles.forEach(function(t,i){ if(t.kind==='youtube'||t.kind==='radio') v.push(i); }); return v; }
+  function videoIndices(){ var v=[]; tiles.forEach(function(t,i){ if(t.kind==='youtube') v.push(i); }); return v; }
   function computeLayout(){
     var pr=wall.getBoundingClientRect(), W=pr.width, H=pr.height;
     var vids=videoIndices(), wire=null; tiles.forEach(function(t){ if(t.kind==='rss') wire=t; });
@@ -565,7 +467,7 @@
     var thumbW = hasThumbs ? clamp(Math.round(W*thumbFrac), Math.round(W*0.12), Math.round(W*0.55)) : 0;
     var mainW = W - (hasThumbs ? thumbW+SP : 0);
 
-    if(mainIdx<0 || !tiles[mainIdx] || (tiles[mainIdx].kind!=='youtube'&&tiles[mainIdx].kind!=='radio')) mainIdx=vids[0];
+    if(mainIdx<0 || tiles[mainIdx].kind!=='youtube') mainIdx=vids[0];
     setGeom(tiles[mainIdx].el, 0, 0, mainW, vidH);
     var tp=$('transport'); if(tp){ var bh=34; tp.style.display='flex'; tp.style.left='0px'; tp.style.width=mainW+'px'; tp.style.height=bh+'px'; tp.style.top=(vidH-bh)+'px'; }
 
@@ -676,8 +578,8 @@
       if(t.player&&t.ready){ try{ if(on&&!muted){ t.player.unMute(); t.player.setVolume(volume); } else { t.player.mute(); } }catch(e){} }
     });
   }
-  function setMain(i){ var k=tiles[i]&&tiles[i].kind; if(i<0||i>=tiles.length||(k!=='youtube'&&k!=='radio')) return;
-    mainIdx=i; if(k==='youtube') audioIdx=i; computeLayout(); applyAudioAndAir(); renderDesk(); }
+  function setMain(i){ if(i<0||i>=tiles.length||tiles[i].kind!=='youtube') return;
+    mainIdx=i; audioIdx=i; computeLayout(); applyAudioAndAir(); renderDesk(); }
   function cycle(dir){ var v=videoIndices(); if(!v.length) return; var p=v.indexOf(mainIdx); if(p<0)p=0; setMain(v[(p+dir+v.length)%v.length]); }
   function changeVolume(d){ if(audioIdx<0){ showToast('<div class="big">NO AUDIO</div>'); return; }
     volume=clamp(volume+d,0,100); if(muted&&volume>0) muted=false; applyAudioAndAir(); renderDesk();
