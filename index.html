@@ -253,7 +253,7 @@
   var DEFAULT_VIDEOS=
     "Sky News | channel:UCoMdktPbSTixAyNGwb-UYkQ\n"+
     "GB News | channel:UC0vn8ISa4LKMunLbzaXLnOQ\n"+
-    "UK Parliament | channel:UCMasyWuE1P2AaEKw_FkGq9g\n"+
+    "UK Commons | channel:UCMasyWuE1P2AaEKw_FkGq9g~Commons\n"+
     "radar: NW Weather | 53.8,-2.6,7";
   var DEFAULT_FEEDS=
     "https://feeds.bbci.co.uk/news/uk/rss.xml\n"+
@@ -321,7 +321,8 @@
       if(extractChannel(b)||extractHandle(b)||extractId(b)){ label=a; src=b; }
       else if(extractChannel(a)||extractHandle(a)||extractId(a)){ label=b; src=a; } }
     var ch=extractChannel(src), hd=ch?null:extractHandle(src), id=(ch||hd)?null:extractId(src), spec=null;
-    if(ch) spec={channelId:ch,label:label}; else if(hd) spec={handleUrl:hd,label:label}; else if(id) spec={id:id,label:label};
+    var lq=ch?((src.match(/~([^|]+?)\s*$/)||[])[1]||null):null; if(lq) lq=lq.trim();
+    if(ch) spec={channelId:ch,label:label,liveQuery:lq}; else if(hd) spec={handleUrl:hd,label:label}; else if(id) spec={id:id,label:label};
     if(!spec){ showToast('<div class="big">NOT A YOUTUBE LINK</div>'); return; }
     var nextN=0; tiles.forEach(function(t){ if(t.kind!=='rss' && t.__n>=nextN) nextN=t.__n+1; });
     addVideoTile(spec, nextN);
@@ -347,7 +348,8 @@
         if(extractChannel(b)||extractHandle(b)||extractId(b)){ label=a; src=b; }
         else if(extractChannel(a)||extractHandle(a)||extractId(a)){ label=b; src=a; } }
       var ch=extractChannel(src);
-      if(ch){ if(!seen['c:'+ch]){ seen['c:'+ch]=1; vids.push({channelId:ch, label:label}); } return; }
+      if(ch){ var lq=(src.match(/~([^|]+?)\s*$/)||[])[1]; lq=lq?lq.trim():null;
+        var ck='c:'+ch+(lq?('~'+lq):''); if(!seen[ck]){ seen[ck]=1; vids.push({channelId:ch, label:label, liveQuery:lq}); } return; }
       var hd=extractHandle(src);
       if(hd){ if(!seen['h:'+hd]){ seen['h:'+hd]=1; vids.push({handleUrl:hd, label:label}); } return; }
       var id=extractId(src); if(id&&!seen[id]){ seen[id]=1; vids.push({id:id, label:label}); } });
@@ -392,7 +394,7 @@
         '<div class="overlay-msg">CH '+(n+1)+nm+(liveish?' offline<br>(waiting for the channel to go live)':' unavailable<br>(embedding disabled or stream offline)')+'</div></div>';
     el.addEventListener('click', function(){ setMain(el.__idx); });
     wall.appendChild(el);
-    tiles.push({kind:'youtube', videoId:id, channelId:channelId, handleUrl:handleUrl, player:null, ready:false, errored:false, title:'', label:label, el:el, __n:n});
+    tiles.push({kind:'youtube', videoId:id, channelId:channelId, handleUrl:handleUrl, liveQuery:spec.liveQuery||null, player:null, ready:false, errored:false, title:'', label:label, el:el, __n:n});
   }
 
   /* ---------- live radar tiles (Leaflet + RainViewer, fully clean) ---------- */
@@ -495,13 +497,21 @@
     el.addEventListener('click', function(){ setMain(el.__idx); });
     wall.appendChild(el);
     tiles.push({kind:'chart', el:el, __n:n});
-    var box=document.createElement('div'); box.className='tradingview-widget-container';
-    var inner=document.createElement('div'); inner.className='tradingview-widget-container__widget'; box.appendChild(inner);
+    var box=document.createElement('div'); box.className='tradingview-widget-container'; box.style.cssText='height:100%;width:100%';
+    var inner=document.createElement('div'); inner.className='tradingview-widget-container__widget'; inner.style.cssText='height:100%;width:100%'; box.appendChild(inner);
     var s=document.createElement('script'); s.type='text/javascript'; s.async=true;
-    s.src='https://s3.tradingview.com/external-embedding/embed-widget-advanced-chart.js';
-    s.text=JSON.stringify({autosize:true,symbol:'FX:GBPUSD',interval:'1',timezone:'Europe/London',theme:'dark',
-      style:'1',locale:'en',hide_side_toolbar:true,allow_symbol_change:false,save_image:false,calendar:false,
-      backgroundColor:'rgba(13,15,17,1)',support_host:'https://www.tradingview.com'});
+    s.src='https://s3.tradingview.com/external-embedding/embed-widget-symbol-overview.js';
+    s.text=JSON.stringify({
+      symbols:[["British Pound / US Dollar","FX:GBPUSD|1D"]],
+      chartOnly:false, autosize:true, locale:'en', colorTheme:'dark', isTransparent:true,
+      backgroundColor:'rgba(13,15,17,1)', gridLineColor:'rgba(255,255,255,0.06)',
+      chartType:'area', lineWidth:2, fontSize:'11', noTimeScale:false,
+      valuesTracking:'1', changeMode:'price-and-percent',
+      showVolume:false, showMA:false, hideDateRanges:false, hideMarketStatus:false, hideSymbolLogo:false,
+      scalePosition:'right', scaleMode:'Normal', headerFontSize:'medium',
+      dateRanges:["1d|1","5d|15","1m|30","3m|60","12m|1D","all|1M"],
+      support_host:'https://www.tradingview.com'
+    });
     box.appendChild(s);
     el.querySelector('.screen').appendChild(box);
   }
@@ -673,9 +683,19 @@
     }
     if(!cid) return null;
     try{
-      var u='https://www.googleapis.com/youtube/v3/search?part=id&channelId='+cid+'&eventType=live&type=video&maxResults=1&key='+YT_API_KEY;
-      var r=await fetch(u,{cache:'no-store'}); if(!r.ok) return null; var j=await r.json();
-      if(j.items&&j.items.length&&j.items[0].id&&j.items[0].id.videoId) return j.items[0].id.videoId;
+      if(t.liveQuery){
+        var u='https://www.googleapis.com/youtube/v3/search?part=snippet&channelId='+cid+'&eventType=live&type=video&maxResults=5&q='+encodeURIComponent(t.liveQuery)+'&key='+YT_API_KEY;
+        var r=await fetch(u,{cache:'no-store'}); if(!r.ok) return null; var j=await r.json();
+        if(!j.items||!j.items.length) return null;
+        var ql=t.liveQuery.toLowerCase(), best=null;
+        for(var i=0;i<j.items.length;i++){ var it=j.items[i];
+          if(it.snippet&&it.snippet.title&&it.snippet.title.toLowerCase().indexOf(ql)>=0){ best=it; break; } }
+        if(!best) best=j.items[0];
+        return (best.id&&best.id.videoId)?best.id.videoId:null;
+      }
+      var u2='https://www.googleapis.com/youtube/v3/search?part=id&channelId='+cid+'&eventType=live&type=video&maxResults=1&key='+YT_API_KEY;
+      var r2=await fetch(u2,{cache:'no-store'}); if(!r2.ok) return null; var j2=await r2.json();
+      if(j2.items&&j2.items.length&&j2.items[0].id&&j2.items[0].id.videoId) return j2.items[0].id.videoId;
     }catch(e){}
     return null;
   }
