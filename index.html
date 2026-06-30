@@ -88,6 +88,11 @@
   .tile.embed .screen{background:#0b0d10}
   .tile.embed .screen iframe{width:100%;height:100%;border:0;display:block}
   .tile.embed.crop .screen iframe{position:absolute;top:0;left:0;width:100%;height:calc(100% + 62px)}
+  .tile.radar .screen{background:#0b0d10}
+  .tile.radar .lmap{position:absolute;inset:0}
+  .tile.radar .leaflet-container{background:#0b0d10;font:inherit}
+  .tile.radar .leaflet-control-attribution{font-size:9px;background:rgba(0,0,0,.4);color:#9aa3ad}
+  .tile.radar .leaflet-control-attribution a{color:#bcc4cd}
   .desk-btn.on{background:var(--tally);border-color:var(--tally);color:#fff}
 
   /* splitters */
@@ -249,7 +254,7 @@
     "Sky News | channel:UCoMdktPbSTixAyNGwb-UYkQ\n"+
     "GB News | channel:UC0vn8ISa4LKMunLbzaXLnOQ\n"+
     "UK Parliament | channel:UCMasyWuE1P2AaEKw_FkGq9g\n"+
-    "embed: NW Weather | https://embed.windy.com/embed2.html?lat=53.8&lon=-2.6&zoom=7&level=surface&overlay=radar&menu=&message=&marker=&calendar=now&pressure=&type=map&location=coordinates&detail=&detailLat=53.48&detailLon=-2.24&metricWind=mph&metricTemp=%C2%B0C&radarRange=-1";
+    "radar: NW Weather | 53.8,-2.6,7";
   var DEFAULT_FEEDS=
     "https://feeds.bbci.co.uk/news/uk/rss.xml\n"+
     "https://www.manchestereveningnews.co.uk/news/?service=rss\n"+
@@ -308,6 +313,9 @@
     if(/^embed:/i.test(raw)){ var es=parseEmbedSpec(raw); if(!es){ showToast('<div class="big">BAD EMBED LINE</div>'); return; }
       var en=0; tiles.forEach(function(t){ if(t.kind!=='rss' && t.__n>=en) en=t.__n+1; });
       addEmbedTile(es, en); reindexTiles(); computeLayout(); renderDesk(); showToast('<div class="big">EMBED ADDED</div>'); return; }
+    if(/^radar:/i.test(raw)){ var ds=parseRadarSpec(raw);
+      var dn=0; tiles.forEach(function(t){ if(t.kind!=='rss' && t.__n>=dn) dn=t.__n+1; });
+      addRadarTile(ds, dn); reindexTiles(); computeLayout(); renderDesk(); showToast('<div class="big">RADAR ADDED</div>'); return; }
     var label='', src=raw, bar=raw.indexOf('|');
     if(bar>=0){ var a=raw.slice(0,bar).trim(), b=raw.slice(bar+1).trim();
       if(extractChannel(b)||extractHandle(b)||extractId(b)){ label=a; src=b; }
@@ -333,6 +341,7 @@
     var vids=[], seen={};
     $('sources').value.split(/\n+/).forEach(function(raw){ raw=raw.trim(); if(!raw) return;
       if(/^embed:/i.test(raw)){ var es=parseEmbedSpec(raw); if(es){ var ek='e:'+es.url; if(!seen[ek]){ seen[ek]=1; vids.push(es); } } return; }
+      if(/^radar:/i.test(raw)){ var ds=parseRadarSpec(raw); var dk='d:'+ds.lat+','+ds.lon; if(!seen[dk]){ seen[dk]=1; vids.push(ds); } return; }
       var label='', src=raw, bar=raw.indexOf('|');
       if(bar>=0){ var a=raw.slice(0,bar).trim(), b=raw.slice(bar+1).trim();
         if(extractChannel(b)||extractHandle(b)||extractId(b)){ label=a; src=b; }
@@ -346,11 +355,11 @@
     $('feeds').value.split(/\n+/).forEach(function(l){ l=l.trim(); if(/^https?:\/\//i.test(l)&&!rseen[l]){rseen[l]=1;rssUrls.push(l);} });
     if(vids.length===0 && rssUrls.length===0){ setErr("Add at least one video source or RSS feed."); return; }
 
-    tiles.forEach(function(t){ try{ t.player&&t.player.destroy(); }catch(e){} });
+    tiles.forEach(function(t){ try{ t.player&&t.player.destroy(); }catch(e){} if(t.kind==='radar') destroyRadar(t); });
     tiles=[]; wall.innerHTML=""; mainIdx=-1; audioIdx=-1;
 
     var n=0;
-    vids.forEach(function(v){ if(v.kind==='embed') addEmbedTile(v, n++); else addVideoTile(v, n++); });
+    vids.forEach(function(v){ if(v.kind==='embed') addEmbedTile(v, n++); else if(v.kind==='radar') addRadarTile(v, n++); else addVideoTile(v, n++); });
     if(rssUrls.length) addWireTile(rssUrls);
     buildSplitters(); buildTransport();
 
@@ -385,6 +394,72 @@
     wall.appendChild(el);
     tiles.push({kind:'youtube', videoId:id, channelId:channelId, handleUrl:handleUrl, player:null, ready:false, errored:false, title:'', label:label, el:el, __n:n});
   }
+
+  /* ---------- live radar tiles (Leaflet + RainViewer, fully clean) ---------- */
+  var _leafletLoad=null;
+  function ensureLeaflet(){
+    if(window.L) return Promise.resolve();
+    if(_leafletLoad) return _leafletLoad;
+    _leafletLoad=new Promise(function(res,rej){
+      var css=document.createElement('link'); css.rel='stylesheet';
+      css.href='https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css'; document.head.appendChild(css);
+      var s=document.createElement('script'); s.src='https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js';
+      s.onload=function(){ res(); }; s.onerror=function(){ rej(new Error('leaflet')); }; document.head.appendChild(s);
+    });
+    return _leafletLoad;
+  }
+  function parseRadarSpec(raw){
+    var body=raw.replace(/^radar:/i,'').trim(), bar=body.indexOf('|'), label='NW Weather', coords=body;
+    if(bar>=0){ label=body.slice(0,bar).trim()||label; coords=body.slice(bar+1).trim(); }
+    var m=coords.split(',').map(function(s){ return parseFloat(s.trim()); });
+    return {kind:'radar', label:label, lat:isFinite(m[0])?m[0]:53.8, lon:isFinite(m[1])?m[1]:-2.6, zoom:isFinite(m[2])?m[2]:7};
+  }
+  function addRadarTile(spec, n){
+    var label=spec.label||'Radar';
+    var el=document.createElement('div'); el.className='tile radar'; el.__idx=tiles.length; el.__n=n;
+    el.innerHTML='<div class="tbar"><span class="ch">CH '+(n+1)+' \u00b7 '+escapeHtml(label)+'</span>'+
+      '<span class="tbar-right"><span class="promote">tap = main</span></span></div>'+
+      '<div class="screen"><div class="lmap"></div>'+
+        '<div class="overlay-msg">'+escapeHtml(label)+'<br><span style="opacity:.8">loading radar\u2026</span></div></div>';
+    el.querySelector('.tbar').addEventListener('click', function(){ setMain(el.__idx); });
+    wall.appendChild(el);
+    var t={kind:'radar', label:label, lat:spec.lat, lon:spec.lon, zoom:spec.zoom, el:el, __n:n,
+           map:null, frames:[], layers:{}, idx:0, anim:null, refresh:null, ro:null, host:'', mapEl:el.querySelector('.lmap')};
+    tiles.push(t);
+    ensureLeaflet().then(function(){ if(t.el.isConnected) initRadar(t); })
+      .catch(function(){ t.el.classList.add('errored'); var o=t.el.querySelector('.overlay-msg');
+        if(o) o.innerHTML=escapeHtml(label)+'<br><span style="opacity:.8">couldn\u2019t load the map library</span>'; });
+  }
+  function initRadar(t){
+    t.map=L.map(t.mapEl,{zoomControl:false,attributionControl:true,fadeAnimation:false}).setView([t.lat,t.lon],t.zoom);
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png',
+      {subdomains:'abcd',maxZoom:18,attribution:'\u00a9 OpenStreetMap \u00a9 CARTO \u00b7 radar RainViewer'}).addTo(t.map);
+    setTimeout(function(){ try{ t.map.invalidateSize(false); }catch(e){} }, 200);
+    if(window.ResizeObserver){ t.ro=new ResizeObserver(function(){ try{ t.map.invalidateSize(false); }catch(e){} }); t.ro.observe(t.mapEl); }
+    loadRadarFrames(t);
+    t.refresh=setInterval(function(){ loadRadarFrames(t); }, 300000);
+  }
+  async function loadRadarFrames(t){
+    try{
+      var r=await fetch('https://api.rainviewer.com/public/weather-maps.json',{cache:'no-store'}); if(!r.ok) return;
+      var j=await r.json(); t.host=j.host;
+      var past=(j.radar&&j.radar.past)||[], now=(j.radar&&j.radar.nowcast)||[], frames=past.concat(now);
+      if(!frames.length) return;
+      Object.keys(t.layers).forEach(function(k){ try{ t.map.removeLayer(t.layers[k]); }catch(e){} });
+      t.layers={}; t.frames=frames;
+      frames.forEach(function(f){
+        t.layers[f.path]=L.tileLayer(t.host+f.path+'/256/{z}/{x}/{y}/2/1_1.png',{opacity:0,tileSize:256}).addTo(t.map);
+      });
+      t.idx=Math.max(0,past.length-1);
+      var o=t.el.querySelector('.overlay-msg'); if(o) o.style.display='none'; t.el.classList.remove('errored');
+      if(t.anim) clearInterval(t.anim);
+      showRadarFrame(t,t.idx);
+      t.anim=setInterval(function(){ t.idx=(t.idx+1)%t.frames.length; showRadarFrame(t,t.idx); }, 600);
+    }catch(e){}
+  }
+  function showRadarFrame(t,i){ t.frames.forEach(function(f,k){ var ly=t.layers[f.path]; if(ly) ly.setOpacity(k===i?0.72:0); }); }
+  function destroyRadar(t){ try{ clearInterval(t.anim); }catch(e){} try{ clearInterval(t.refresh); }catch(e){}
+    try{ t.ro&&t.ro.disconnect(); }catch(e){} try{ t.map&&t.map.remove(); }catch(e){} }
 
   /* ---------- generic embed (iframe) tiles: weather maps, etc. ---------- */
   function reindexTiles(){ tiles.forEach(function(t,i){ if(t.el) t.el.__idx=i; }); }
