@@ -87,6 +87,7 @@
   .tile.chart .tbar .ch::before{content:"\1F4C8  ";opacity:.85}
   .tile.embed .screen{background:#0b0d10}
   .tile.embed .screen iframe{width:100%;height:100%;border:0;display:block}
+  .tile.embed.crop .screen iframe{position:absolute;top:0;left:0;width:100%;height:calc(100% + 62px)}
   .desk-btn.on{background:var(--tally);border-color:var(--tally);color:#fff}
 
   /* splitters */
@@ -401,6 +402,7 @@
       '<span class="tbar-right"><span class="promote">tap = main</span></span></div>'+
       '<div class="screen"></div>';
     el.addEventListener('click', function(){ setMain(el.__idx); });
+    if(/windy\.com/i.test(spec.url)) el.classList.add('crop');
     wall.appendChild(el);
     tiles.push({kind:'embed', label:label, url:spec.url, el:el, __n:n});
     var ifr=document.createElement('iframe'); ifr.src=spec.url;
