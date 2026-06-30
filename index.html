@@ -495,11 +495,14 @@
     var box=document.createElement('div'); box.className='tradingview-widget-container'; box.style.cssText='height:100%;width:100%';
     var inner=document.createElement('div'); inner.className='tradingview-widget-container__widget'; inner.style.cssText='height:100%;width:100%'; box.appendChild(inner);
     var s=document.createElement('script'); s.type='text/javascript'; s.async=true;
-    s.src='https://s3.tradingview.com/external-embedding/embed-widget-mini-symbol-overview.js';
+    s.src='https://s3.tradingview.com/external-embedding/embed-widget-advanced-chart.js';
     s.text=JSON.stringify({
-      symbol:'FX:GBPUSD', width:'100%', height:'100%', locale:'en', dateRange:'1D',
-      colorTheme:'dark', isTransparent:true, autosize:true, largeChartUrl:'',
-      chartOnly:true, noTimeScale:false
+      autosize:true, symbol:'FX:GBPUSD', interval:'1', timezone:'Europe/London', theme:'dark',
+      style:'3', locale:'en',
+      hide_top_toolbar:true, hide_legend:true, hide_side_toolbar:true, hide_volume:true,
+      allow_symbol_change:false, withdateranges:false, details:false, hotlist:false,
+      calendar:false, save_image:false,
+      backgroundColor:'rgba(13,15,17,1)', support_host:'https://www.tradingview.com'
     });
     box.appendChild(s);
     el.querySelector('.screen').appendChild(box);
@@ -525,7 +528,7 @@
         '<button class="wbtn" data-d="1" title="Bigger text">A+</button></span></div>'+
         '<span class="feedstat updating"><span class="statdot"></span><span class="stattxt">updating</span></span></div>'+
       '<div class="feedlist"><div class="feedempty">Fetching feeds…</div></div>';
-    var t={kind:'rss', urls:urls, items:[], seen:{}, firstSeen:{}, primed:false, lastUpdate:0, failed:false, el:el,
+    var t={kind:'rss', urls:urls, items:[], cache:{}, seen:{}, firstSeen:{}, primed:false, lastUpdate:0, failed:false, el:el,
            listEl:el.querySelector('.feedlist'), titleEl:el.querySelector('.feedtitle'),
            statEl:el.querySelector('.feedstat'), statTxtEl:el.querySelector('.stattxt')};
     el.querySelectorAll('.wbtn').forEach(function(b){
@@ -764,11 +767,12 @@
   var toastT; function showToast(h){ toast.innerHTML=h; toast.classList.add('show'); clearTimeout(toastT); toastT=setTimeout(function(){ toast.classList.remove('show'); },900); }
 
   /* ---------- RSS ---------- */
-  function setFeedStatus(t, state, label){ t.statEl.className='feedstat '+state;
-    t.statTxtEl.textContent = label || (state==='ok'?('upd '+ago(t.lastUpdate)+' ago'):state==='updating'?'updating':'failed'); }
+  function setFeedStatus(t, state, label){ var cls=(state==='stale')?'updating':state; t.statEl.className='feedstat '+cls;
+    t.statTxtEl.textContent = label || (state==='ok'?('upd '+ago(t.lastUpdate)+' ago'):state==='updating'?'updating':state==='stale'?('cached '+ago(t.lastUpdate)+' ago'):'failed'); }
   function proxies(url, offset){ var e=encodeURIComponent(url);
     var list=[{u:'https://api.allorigins.win/raw?url='+e, kind:'xml'},
               {u:'https://corsproxy.io/?url='+e, kind:'xml'},
+              {u:'https://api.codetabs.com/v1/proxy/?quest='+e, kind:'xml'},
               {u:'https://api.rss2json.com/v1/api.json?rss_url='+e, kind:'json'}];
     offset=((offset||0)%list.length+list.length)%list.length;
     return list.slice(offset).concat(list.slice(0,offset)); }
@@ -803,16 +807,19 @@
   async function loadFeed(t){
     setFeedStatus(t,'updating');
     var results=await Promise.all(t.urls.map(function(u,i){ return fetchOne(u,i).then(function(items){ return {url:u, items:items}; }); }));
-    var all=[], okCount=0;
-    results.forEach(function(res){ if(res.items){ okCount++; var label=sourceLabel(res.url);
-      res.items.forEach(function(it){ it.source=label; all.push(it); }); } });
-    if(okCount===0){ t.failed=true; renderFeed(t); setFeedStatus(t,'fail'); return; }
+    var freshCount=0;
+    results.forEach(function(res){ if(res.items && res.items.length){ t.cache[res.url]=res.items; freshCount++; } });
+    // Build from cache (fresh where we just got it, last-good where this cycle failed) so nothing flickers in and out.
+    var all=[], haveSources=0;
+    t.urls.forEach(function(u){ var items=t.cache[u]; if(items && items.length){ haveSources++; var label=sourceLabel(u);
+      items.forEach(function(it){ var c={title:it.title, link:it.link, date:it.date, desc:it.desc, source:label}; all.push(c); }); } });
+    if(!all.length){ t.failed=true; renderFeed(t); setFeedStatus(t,'fail'); return; }
     all.sort(function(a,b){ return new Date(b.date)-new Date(a.date); });
     var sl={}; all=all.filter(function(it){ var k=it.link||it.title; if(sl[k]) return false; sl[k]=1; return true; });
     var now=Date.now(); all=all.filter(function(it){ var p=Date.parse(it.date); return isNaN(p) || (now-p)<=WIRE_MAXAGE_MS; });
-    t.items=all.slice(0,40); t.failed=false; t.lastUpdate=Date.now();
-    t.titleEl.textContent='Wires · '+okCount+'/'+t.urls.length+' sources';
-    renderFeed(t); setFeedStatus(t,'ok');
+    t.items=all.slice(0,60); t.failed=false; t.lastUpdate=Date.now();
+    t.titleEl.textContent='Wires \u00b7 '+haveSources+'/'+t.urls.length+' sources';
+    renderFeed(t); setFeedStatus(t, freshCount?'ok':'stale');
   }
   function flashClassFor(dateStr, firstSeenVal){ var now=Date.now(), pub=Date.parse(dateStr);
     if(!isNaN(pub) && (now-pub)<=RED_WINDOW_MS && (now-pub)>=-120000) return 'flash-red';
