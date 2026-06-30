@@ -85,6 +85,8 @@
   .tile.chart .screen{background:#0d0f11}
   .tile.chart .tradingview-widget-container,.tile.chart .tradingview-widget-container__widget{height:100%;width:100%}
   .tile.chart .tbar .ch::before{content:"\1F4C8  ";opacity:.85}
+  .tile.embed .screen{background:#0b0d10}
+  .tile.embed .screen iframe{width:100%;height:100%;border:0;display:block}
   .desk-btn.on{background:var(--tally);border-color:var(--tally);color:#fff}
 
   /* splitters */
@@ -183,7 +185,7 @@
         <label class="fld field-gap" for="feeds">News feeds — RSS URL per line</label>
         <textarea id="feeds" spellcheck="false"></textarea>
         <div class="hint">
-          Click any channel (or press its number / the arrow keys) to make it the big main window — the rest tile as thumbnails. Give each line a direct live link for instant, reliable playback, e.g. <code>Sky News | https://youtube.com/watch?v=…</code>. To <b>auto-follow</b> a channel's current live stream (so it picks up the next show when they restart, and catches a channel like Number 10 the moment it goes live), use <code>Name | channel:UCxxxx</code> — but this needs a free YouTube Data API key pasted into <code>YT_API_KEY</code> at the top of the file, because YouTube no longer lets a browser find the live video without one. No key = use direct links. Drag the dividers between windows to resize them. The wires bar merges all feeds, tagged by source, newest first, refreshing every 30 seconds: new headlines flash orange for 30s, anything timestamped within 5 minutes flashes red. Feeds use public CORS proxies (one per feed).
+          Click any channel (or press its number / the arrow keys) to make it the big main window — the rest tile as thumbnails. Give each line a direct live link for instant, reliable playback, e.g. <code>Sky News | https://youtube.com/watch?v=…</code>. To <b>auto-follow</b> a channel's current live stream (so it picks up the next show when they restart, and catches a channel like Number 10 the moment it goes live), use <code>Name | channel:UCxxxx</code> — but this needs a free YouTube Data API key pasted into <code>YT_API_KEY</code> at the top of the file, because YouTube no longer lets a browser find the live video without one. No key = use direct links. You can also add a non-video panel with <code>embed: Label | https://…</code> (e.g. a Windy weather map) — it tiles like any other feed. Drag the dividers between windows to resize them. The wires bar merges all feeds, tagged by source, newest first, refreshing every 30 seconds: new headlines flash orange for 30s, anything timestamped within 5 minutes flashes red. Feeds use public CORS proxies (one per feed).
         </div>
         <div class="row">
           <button id="load" class="primary">Build the wall</button>
@@ -245,7 +247,8 @@
   var DEFAULT_VIDEOS=
     "Sky News | channel:UCoMdktPbSTixAyNGwb-UYkQ\n"+
     "GB News | channel:UC0vn8ISa4LKMunLbzaXLnOQ\n"+
-    "Times Radio | channel:UCF-VP3b3oH0XASqsLI5rnLw";
+    "UK Parliament | channel:UCMasyWuE1P2AaEKw_FkGq9g\n"+
+    "embed: NW Weather | https://embed.windy.com/embed2.html?lat=53.8&lon=-2.6&zoom=7&level=surface&overlay=radar&menu=&message=&marker=&calendar=now&pressure=&type=map&location=coordinates&detail=&detailLat=53.48&detailLon=-2.24&metricWind=mph&metricTemp=%C2%B0C&radarRange=-1";
   var DEFAULT_FEEDS=
     "https://feeds.bbci.co.uk/news/uk/rss.xml\n"+
     "https://www.manchestereveningnews.co.uk/news/?service=rss\n"+
@@ -301,6 +304,9 @@
   function addFeedPrompt(){
     var raw=prompt('Add a feed — paste a YouTube link.\nOptional label, e.g.  BBC News | https://www.youtube.com/watch?v=…');
     if(raw==null) return; raw=raw.trim(); if(!raw) return;
+    if(/^embed:/i.test(raw)){ var es=parseEmbedSpec(raw); if(!es){ showToast('<div class="big">BAD EMBED LINE</div>'); return; }
+      var en=0; tiles.forEach(function(t){ if(t.kind!=='rss' && t.__n>=en) en=t.__n+1; });
+      addEmbedTile(es, en); reindexTiles(); computeLayout(); renderDesk(); showToast('<div class="big">EMBED ADDED</div>'); return; }
     var label='', src=raw, bar=raw.indexOf('|');
     if(bar>=0){ var a=raw.slice(0,bar).trim(), b=raw.slice(bar+1).trim();
       if(extractChannel(b)||extractHandle(b)||extractId(b)){ label=a; src=b; }
@@ -308,7 +314,7 @@
     var ch=extractChannel(src), hd=ch?null:extractHandle(src), id=(ch||hd)?null:extractId(src), spec=null;
     if(ch) spec={channelId:ch,label:label}; else if(hd) spec={handleUrl:hd,label:label}; else if(id) spec={id:id,label:label};
     if(!spec){ showToast('<div class="big">NOT A YOUTUBE LINK</div>'); return; }
-    var nextN=0; tiles.forEach(function(t){ if(t.kind==='youtube' && t.__n>=nextN) nextN=t.__n+1; });
+    var nextN=0; tiles.forEach(function(t){ if(t.kind!=='rss' && t.__n>=nextN) nextN=t.__n+1; });
     addVideoTile(spec, nextN);
     var t=tiles[tiles.length-1];
     computeLayout(); renderDesk();
@@ -325,6 +331,7 @@
     setErr("");
     var vids=[], seen={};
     $('sources').value.split(/\n+/).forEach(function(raw){ raw=raw.trim(); if(!raw) return;
+      if(/^embed:/i.test(raw)){ var es=parseEmbedSpec(raw); if(es){ var ek='e:'+es.url; if(!seen[ek]){ seen[ek]=1; vids.push(es); } } return; }
       var label='', src=raw, bar=raw.indexOf('|');
       if(bar>=0){ var a=raw.slice(0,bar).trim(), b=raw.slice(bar+1).trim();
         if(extractChannel(b)||extractHandle(b)||extractId(b)){ label=a; src=b; }
@@ -342,7 +349,7 @@
     tiles=[]; wall.innerHTML=""; mainIdx=-1; audioIdx=-1;
 
     var n=0;
-    vids.forEach(function(v){ addVideoTile(v, n++); });
+    vids.forEach(function(v){ if(v.kind==='embed') addEmbedTile(v, n++); else addVideoTile(v, n++); });
     if(rssUrls.length) addWireTile(rssUrls);
     buildSplitters(); buildTransport();
 
@@ -378,8 +385,31 @@
     tiles.push({kind:'youtube', videoId:id, channelId:channelId, handleUrl:handleUrl, player:null, ready:false, errored:false, title:'', label:label, el:el, __n:n});
   }
 
-  /* ---------- live FX chart tile (TradingView) ---------- */
+  /* ---------- generic embed (iframe) tiles: weather maps, etc. ---------- */
   function reindexTiles(){ tiles.forEach(function(t,i){ if(t.el) t.el.__idx=i; }); }
+  function parseEmbedSpec(raw){
+    var body=raw.replace(/^embed:/i,'').trim(), bar=body.indexOf('|');
+    if(bar<0) return null;
+    var label=body.slice(0,bar).trim(), url=body.slice(bar+1).trim();
+    if(!/^https?:\/\//i.test(url)) return null;
+    return {kind:'embed', label:label||'Embed', url:url};
+  }
+  function addEmbedTile(spec, n){
+    var label=spec.label||'Embed';
+    var el=document.createElement('div'); el.className='tile embed'; el.__idx=tiles.length; el.__n=n;
+    el.innerHTML='<div class="tbar"><span class="ch">CH '+(n+1)+' \u00b7 '+escapeHtml(label)+'</span>'+
+      '<span class="tbar-right"><span class="promote">tap = main</span></span></div>'+
+      '<div class="screen"></div>';
+    el.addEventListener('click', function(){ setMain(el.__idx); });
+    wall.appendChild(el);
+    tiles.push({kind:'embed', label:label, url:spec.url, el:el, __n:n});
+    var ifr=document.createElement('iframe'); ifr.src=spec.url;
+    ifr.setAttribute('frameborder','0'); ifr.setAttribute('allowfullscreen','');
+    ifr.allow='autoplay; fullscreen; geolocation';
+    el.querySelector('.screen').appendChild(ifr);
+  }
+
+  /* ---------- live FX chart tile (TradingView) ---------- */
   function addChartTile(n){
     var el=document.createElement('div'); el.className='tile chart'; el.__idx=tiles.length; el.__n=n;
     el.innerHTML='<div class="tbar"><span class="ch">CH '+(n+1)+' \u00b7 GBP/USD</span>'+
@@ -494,7 +524,7 @@
 
   /* ---------- layout: main + thumbnails + wire ---------- */
   function setGeom(el,l,t,w,h){ el.style.left=Math.round(l)+'px'; el.style.top=Math.round(t)+'px'; el.style.width=Math.round(w)+'px'; el.style.height=Math.round(h)+'px'; }
-  function videoIndices(){ var v=[]; tiles.forEach(function(t,i){ if(t.kind==='youtube'||t.kind==='chart') v.push(i); }); return v; }
+  function videoIndices(){ var v=[]; tiles.forEach(function(t,i){ if(t.kind!=='rss') v.push(i); }); return v; }
   function computeLayout(){
     var pr=wall.getBoundingClientRect(), W=pr.width, H=pr.height;
     var vids=videoIndices(), wire=null; tiles.forEach(function(t){ if(t.kind==='rss') wire=t; });
@@ -508,7 +538,7 @@
     var thumbW = hasThumbs ? clamp(Math.round(W*thumbFrac), Math.round(W*0.12), Math.round(W*0.55)) : 0;
     var mainW = W - (hasThumbs ? thumbW+SP : 0);
 
-    if(mainIdx<0 || !tiles[mainIdx] || (tiles[mainIdx].kind!=='youtube'&&tiles[mainIdx].kind!=='chart')) mainIdx=vids[0];
+    if(mainIdx<0 || !tiles[mainIdx] || tiles[mainIdx].kind==='rss') mainIdx=vids[0];
     setGeom(tiles[mainIdx].el, 0, 0, mainW, vidH);
     var tp=$('transport'); if(tp){ var bh=34; tp.style.display='flex'; tp.style.left='0px'; tp.style.width=mainW+'px'; tp.style.height=bh+'px'; tp.style.top=(vidH-bh)+'px'; }
 
@@ -619,7 +649,7 @@
       if(t.player&&t.ready){ try{ if(on&&!muted){ t.player.unMute(); t.player.setVolume(volume); } else { t.player.mute(); } }catch(e){} }
     });
   }
-  function setMain(i){ var k=tiles[i]&&tiles[i].kind; if(i<0||i>=tiles.length||(k!=='youtube'&&k!=='chart')) return;
+  function setMain(i){ var k=tiles[i]&&tiles[i].kind; if(i<0||i>=tiles.length||!k||k==='rss') return;
     mainIdx=i; if(k==='youtube') audioIdx=i; computeLayout(); applyAudioAndAir(); renderDesk(); }
   function cycle(dir){ var v=videoIndices(); if(!v.length) return; var p=v.indexOf(mainIdx); if(p<0)p=0; setMain(v[(p+dir+v.length)%v.length]); }
   function changeVolume(d){ if(audioIdx<0){ showToast('<div class="big">NO AUDIO</div>'); return; }
