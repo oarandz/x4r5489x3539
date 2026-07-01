@@ -259,6 +259,10 @@
     "https://feeds.bbci.co.uk/news/uk/rss.xml\n"+
     "https://www.manchestereveningnews.co.uk/news/?service=rss\n"+
     "https://www.liverpoolecho.co.uk/news/?service=rss\n"+
+    "https://www.gmp.police.uk/news/greater-manchester/news/GetNewsRss/\n"+
+    "https://www.merseyside.police.uk/news/merseyside/news/GetNewsRss/\n"+
+    "https://www.cheshire.police.uk/news/cheshire/news/GetNewsRss/\n"+
+    "https://www.northwales.police.uk/news/north-wales/news/GetNewsRss/\n"+
     "https://feeds.skynews.com/feeds/rss/uk.xml\n"+
     "https://weather.metoffice.gov.uk/public/data/PWSCache/WarningsRSS/Region/uk";
 
@@ -795,6 +799,10 @@
     if(/telegraph/.test(h)) return 'Telegraph';
     if(/manchestereveningnews/.test(h)) return 'MEN';
     if(/liverpoolecho/.test(h)) return 'Echo';
+    if(/gmp\.police/.test(h)) return 'GMP';
+    if(/merseyside\.police/.test(h)) return 'Merseyside Police';
+    if(/cheshire\.police/.test(h)) return 'Cheshire Police';
+    if(/northwales\.police/.test(h)) return 'North Wales Police';
     return h.split('.')[0].toUpperCase(); }
   async function fetchOne(url, offset){ var list=proxies(url, offset);
     for(var i=0;i<list.length;i++){ try{
